@@ -3,6 +3,98 @@
   if(typeof RAW==='undefined'||typeof ROWS==='undefined') return;
   const XREFS=RAW.xrefs||{};
   const IMGS=RAW.imgs||{};
+  const APPROX=RAW.approx||{};
+  const SUB_RULES=[
+    ["cabin filter", /\b(CABIN|POLLEN|HABITACLE|INTERIOR FILTER|FILTER,? *CABIN)\b/i],
+    ["air filter (panel)", /\bAIR FILTER\b|\bAIR CLEANER ELEMENT\b|\bPANEL AIR\b/i],
+    ["oil filter (cartridge)", /\bOIL FILTER\b.*\b(ELMT|ELEMENT|CARTRIDGE|INSERT)\b|\bFILTER ELMT\b|\bSET OIL-FILTER\b/i],
+    ["oil filter (spin-on)", /\bOIL FILTER\b|\bSPIN.?ON\b/i],
+    ["fuel filter", /\bFUEL FILTER\b|\bFILTER,? *FUEL\b/i],
+    ["hydraulic filter", /\bHYDRAULIC FILTER\b|\bSTEERING FILTER\b/i],
+    ["filter (other)", /\bFILTER\b/i],
+    ["brake pad", /\bBRAKE PAD|\bBREAK PAD|\bDISC PAD|\bPAD FRONT|\bPAD REAR|\bPAD WITH SHIM/i],
+    ["brake shoe", /\bBRAKE SHOE|\bSHOE BRAKE|\bSHOE FRONT|\bSHOE REAR/i],
+    ["brake disc", /\bBRAKE DISC|\bBRAKE ROTOR|\bDISC ROTOR|\bROTOR DISC/i],
+    ["brake drum", /\bBRAKE DRUM|\bDRUM BRAKE/i],
+    ["brake caliper", /\bCALIPER\b/i],
+    ["brake hose / line", /\bBRAKE HOSE|\bBRAKE LINE|\bBRAKE PIPE|\bBRAKE TUBE/i],
+    ["brake (other)", /\bBRAKE\b|\bBRAKE BOOSTER|\bMASTER CYLINDER/i],
+    ["shock absorber", /\bSHOCK ABSORBER\b|\bSHOCK ABS\b/i],
+    ["strut", /\bSTRUT\b|\bMACPHERSON\b/i],
+    ["coil spring", /\bCOIL SPRING\b|\bSPRING COIL\b/i],
+    ["control arm", /\bCONTROL ARM\b|\bWISHBONE\b|\bSUSPENSION ARM\b|\bTRACK CONTROL\b/i],
+    ["ball joint", /\bBALL JOINT\b/i],
+    ["tie rod", /\bTIE ROD\b|\bTIE-ROD\b|\bDRAG LINK\b/i],
+    ["stabilizer / sway bar link", /\bSTABILIZER\b|\bSWAY BAR\b|\bANTI.?ROLL\b|\bDROP LINK\b|\bKOPPEL\b/i],
+    ["bushing", /\bBUSHING\b|\bBUSH\b|\bSILENTBLOC|\bSILENT BLOCK/i],
+    ["wheel hub / bearing hub", /\bWHEEL HUB\b|\bHUB BEARING\b|\bHUB UNIT\b|\bHUB BALL\b|\bHUB ASSEMBLY/i],
+    ["cv joint / axle", /\bCV JOINT\b|\bDRIVE SHAFT\b|\bDRIVESHAFT\b|\bCV AXLE\b|\bAXLE SHAFT\b/i],
+    ["wheel bearing", /\bWHEEL BEARING\b/i],
+    ["bearing", /\bBEARING\b/i],
+    ["piston", /\bPISTON ASSY\b|\bPISTON\b/i],
+    ["ring set", /\bPISTON RING|\bRING SET\b/i],
+    ["engine valve", /\bVALVE,EXHAUST|\bVALVE,INTAKE|\bEXHAUST VALVE|\bINTAKE VALVE|\bENGINE VALVE/i],
+    ["timing chain / kit", /\bTIMING CHAIN|\bCHAIN KIT\b/i],
+    ["timing belt", /\bTIMING BELT\b/i],
+    ["camshaft / crankshaft", /\bCAMSHAFT\b|\bCRANKSHAFT\b/i],
+    ["serpentine / V-ribbed belt", /\bRIB ACE\b|\bRIBBED BELT\b|\bSERPENTINE\b|\bV-RIB|\bPK BELT\b|\bFAN BELT\b|\bDRIVE BELT\b|\bV BELT\b|\bBELT,V/i],
+    ["belt tensioner", /\bTENSIONER\b|\bIDLER\b/i],
+    ["pulley", /\bPULLEY\b/i],
+    ["radiator cap", /\bRADIATOR CAP\b/i],
+    ["radiator", /\bRADIATOR\b/i],
+    ["water pump", /\bWATER PUMP\b/i],
+    ["thermostat", /\bTHERMOSTAT\b/i],
+    ["cooling fan", /\bCOOLING FAN\b|\bFAN MOTOR\b|\bCONDENSER FAN\b/i],
+    ["blower motor", /\bBLOWER MOTOR\b|\bBLOWER\b/i],
+    ["compressor / AC", /\bCOMPRESSOR\b|\bAIR COND|\bCONDENSER\b|\bEVAPORATOR\b/i],
+    ["oil cooler", /\bOIL COOLER\b/i],
+    ["ignition coil", /\bIGNITION COIL\b|\bCOIL,IGN/i],
+    ["spark plug", /\bSPARK PLUG\b/i],
+    ["glow plug", /\bGLOW PLUG\b/i],
+    ["battery", /\bBATTERY\b/i],
+    ["bulb H4", /\bH4\b/i],
+    ["bulb H7", /\bH7\b/i],
+    ["bulb H11 / HB", /\bH11\b|\bHB3\b|\bHB4\b|\bH8\b|\bH9\b/i],
+    ["bulb (other)", /\bBULB\b|\bLAMP\b|\bHEADLIGHT\b|\bHEADLAMP\b/i],
+    ["wiper blade", /\bWIPER\b/i],
+    ["alternator", /\bALTERNATOR\b/i],
+    ["starter", /\bSTARTER\b/i],
+    ["sensor", /\bSENSOR\b|\bLAMBDA\b|\bO2 SENSOR\b/i],
+    ["clutch kit / disc", /\bCLUTCH KIT\b|\bCLUTCH DISC\b|\bCLUTCH COVER\b|\bCLUTCH PLATE\b|\bCLUTCH PRESSURE/i],
+    ["clutch release bearing", /\bCLUTCH RELEASE|\bRELEASE BEARING\b/i],
+    ["clutch (other)", /\bCLUTCH\b/i],
+    ["flywheel", /\bFLYWHEEL\b/i],
+    ["transmission / gearbox part", /\bGEARBOX\b|\bTRANSMISSION\b|\bSYNCHRO\b|\bTRANSFER CASE\b|\bTRANSFER SHIFT/i],
+    ["fuel injector", /\bINJECTOR\b/i],
+    ["fuel pump", /\bFUEL PUMP\b/i],
+    ["fuel line / tank", /\bFUEL LINE\b|\bFUEL PIPE\b|\bFUEL TANK\b|\bFUEL HOSE\b|\bFUEL CAP\b/i],
+    ["head gasket", /\bGASKET HEAD\b|\bHEAD GASKET\b|\bGASKET,HEAD\b/i],
+    ["full gasket set", /\bGASKET FULL\b|\bGASKET SET\b|\bOVERHAUL GASKET\b/i],
+    ["gasket / seal", /\bGASKET\b|\bSEAL\b|\bO-RING\b|\bORING\b|\bOIL SEAL\b/i],
+    ["horn", /\bHORN\b/i],
+    ["hose", /\bHOSE\b/i],
+    ["bolt / nut / hardware", /\bBOLT\b|\bNUT\b|\bWASHER\b|\bCLIP\b|\bCLAMP\b|\bSCREW\b/i],
+    ["turbocharger", /\bTURBOCHARGER\b|\bTURBO\b/i],
+    ["exhaust part", /\bEXHAUST\b|\bMUFFLER\b|\bSILENCER\b|\bCATALYTIC\b/i],
+    ["engine oil", /\bENGINE OIL\b|\bMOTOR OIL\b|\b0W-|\b5W-|\b10W-|\b15W-|\b20W-/i],
+    ["ATF / transmission fluid", /\bATF\b|\bDEXRON\b|\bGEAR OIL\b|\bTRANSMISSION FLUID\b/i],
+    ["grease", /\bGREASE\b/i],
+    ["chemical / additive", /\bCLEANER\b|\bADDITIVE\b|\bBRAKE FLUID\b|\bCOOLANT\b|\bANTIFREEZE\b|\bSPRAY\b/i],
+    ["oil pump", /\bOIL PUMP\b/i],
+    ["pump (other)", /\bPUMP\b/i],
+  ];
+  const SUB_FALLBACK={"Bearings": "bearing", "Steering & Suspension": "steering / suspension part", "Braking": "brake (other)", "Engine Internals": "engine part", "Filters": "filter (other)", "Cooling & Climate": "cooling part", "Transmission & Clutch": "clutch (other)", "Hardware & Hoses": "hose", "Belts & Pulleys": "serpentine / V-ribbed belt", "Gaskets & Seals": "gasket / seal", "Body & Lighting": "bulb (other)", "Electrical & Sensors": "sensor", "Fuel System": "fuel system part", "Pumps": "pump (other)", "Lubricants & Fluids": "engine oil", "Turbo & Exhaust": "exhaust part", "Other Parts": "automotive spare part"};
+  function subtypeOf(desc, cat){
+    const d=desc||'';
+    for(const [name,rx] of SUB_RULES){ if(rx.test(d)) return name; }
+    return SUB_FALLBACK[cat||'']||'automotive spare part';
+  }
+  function shippedImgs(sku, desc, cat){
+    if(IMGS[sku]&&IMGS[sku].length) return IMGS[sku];
+    const t=subtypeOf(desc, cat);
+    const rec=APPROX[t];
+    return rec?Object.assign({},rec,{typ:t,k:'approx'}):[];
+  }
   const PIN_H='efp-owner-hash', PIN_S='efp-owner-salt', PIN_OK='efp-owner-ok';
   const IDB_NAME='efp-owner-photos', IDB_STORE='photos';
   const EMB_URL='embeddings.json';
@@ -26,7 +118,7 @@
 
   ROWS.forEach(r=>{
     r._xrefs=XREFS[r._sku]||[];
-    r._imgs=IMGS[r._sku]||[];
+    r._imgs=shippedImgs(r._sku,r._desc,r._cat);
     if(r._xrefs.length){
       r.u+=' '+r._xrefs.join(' ').toUpperCase();
       r.k+=' '+r._xrefs.map(N).join(' ');
@@ -183,7 +275,11 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
     const k=(im.k||'photo').toLowerCase();
     if(k==='diagram') return 'Diagram';
     if(k==='image') return 'Image';
-    if(k==='approx'||k==='approximate') return 'Approximate';
+    if(k==='approx'||k==='approximate'){
+      const t=im.typ||im.t||'part';
+      return 'Approximate – typical '+t;
+    }
+    if(im.src) return 'Source: '+im.src;
     return 'Photo';
   }
   async function allImagesFor(sku){
@@ -213,7 +309,7 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
       $('cnt').textContent=res.length.toLocaleString()+(imgHits?' closest':' matches');
     }
     const rows=slice.map((r,i)=>{
-      const score=imgHits && r._sim!=null? `<div class="xref">Similarity ${Math.round(r._sim*100)}%</div>`:'';
+      const score=imgHits && r._sim!=null? `<div class="xref">Similarity ${Math.round(r._sim*100)}%${r._simApprox?' · <span class="badge approx">Approximate – typical '+esc(r._simTyp||'part')+'</span>':''}</div>`:'';
       const imgs=r._dispImgs||r._imgs;
       return `<tr data-i="${i}">
         <td><div class="td-item">${thumbHtml(imgs)}<div><b>${esc(r._sku)}</b>${xrefHtml(r,false)}${score}</div></div></td>
@@ -640,20 +736,44 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
       const img=await createImageBitmap(file);
       const q=await embedImage(img);
       const ownE=await ownEmbeddings();
-      const best=new Map(); /* sku -> score */
-      const add=(sku,score)=>{
+      const best=new Map(); /* sku -> {score, approx, typ} */
+      const add=(sku,score,approx,typ)=>{
         const prev=best.get(sku);
-        if(prev==null||score>prev) best.set(sku, score);
+        if(!prev || score>prev.score || (score===prev.score && prev.approx && !approx)){
+          best.set(sku, {score, approx:!!approx, typ:typ||null});
+        }
       };
+      const approxCands=[];
       (catE.meta.items||[]).forEach((it,i)=>{
-        if(!it||!it.sku) return;
-        add(it.sku, cosine(q, catE.vecs[i]));
+        if(!it) return;
+        const score=cosine(q, catE.vecs[i]);
+        if(it.k==='approx'||it.k==='approximate'){
+          approxCands.push({score, typ:it.typ||'part', skus:it.skus||(it.sku?[it.sku]:[])});
+          return;
+        }
+        if(it.sku) add(it.sku, score, false, it.typ);
       });
-      ownE.forEach(o=>add(o.sku, cosine(q,o.v)));
-      const ranked=[...best.entries()].sort((a,b)=>b[1]-a[1]).slice(0,40);
-      imgHits=ranked.map(([sku,score])=>{
+      ownE.forEach(o=>add(o.sku, cosine(q,o.v), false, null));
+      // For each strong approx match, add up to 3 example parts (category filter applied later)
+      approxCands.sort((a,b)=>b.score-a.score);
+      const usedTyp=new Set();
+      for(const a of approxCands.slice(0,8)){
+        if(usedTyp.has(a.typ)) continue;
+        usedTyp.add(a.typ);
+        let n=0;
+        for(const sku of a.skus){
+          if(n>=3) break;
+          if(!bySku[sku]) continue;
+          add(sku, a.score, true, a.typ);
+          n++;
+        }
+      }
+      const ranked=[...best.entries()].sort((a,b)=>b[1].score-a[1].score).slice(0,40);
+      imgHits=ranked.map(([sku,info])=>{
         const r=bySku[sku]; if(!r) return null;
-        return {r, score};
+        r._simApprox=!!info.approx;
+        r._simTyp=info.typ||((r._imgs&&r._imgs[0]&&r._imgs[0].typ)||'');
+        return {r, score:info.score};
       }).filter(Boolean);
       if(!imgHits.length){
         imgHits=null;
