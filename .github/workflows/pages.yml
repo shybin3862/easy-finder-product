@@ -15,10 +15,19 @@ jobs:
         run: |
           mkdir site
           cp app/index.html app/manifest.json app/sw.js site/
+          [ -f app/extras.js ] && cp app/extras.js site/
+          [ -f app/embeddings.json ] && cp app/embeddings.json site/
           for f in icon-180 icon-192 icon-512 icon-512-maskable favicon logo; do
             base64 -d app/$f.png.b64 > site/$f.png
           done
           base64 -d app/favicon.ico.b64 > site/favicon.ico
+          if [ -f app/assets.tar.gz.b64 ]; then
+            base64 -d app/assets.tar.gz.b64 | tar -xz -C site
+          elif ls app/assets.tar.gz.b64.p* >/dev/null 2>&1; then
+            cat app/assets.tar.gz.b64.p* | base64 -d | tar -xz -C site
+          elif [ -f app/assets.tar.b64 ]; then
+            base64 -d app/assets.tar.b64 | tar -x -C site
+          fi
           touch site/.nojekyll
           printf 'User-agent: *\nDisallow: /\n' > site/robots.txt
       - name: Push to gh-pages branch
