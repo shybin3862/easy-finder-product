@@ -119,6 +119,8 @@
   const MORE_N=4;
   let browse='vehicle';
   let ownerOn=false;
+  let ownSkuSet=new Set();
+  let myphUrls=[];
   let imgHits=null; /* [{r, score}] or null */
   let imgMsg='';
   let modelP=null, embedder=null, catalogEmb=null;
@@ -237,6 +239,7 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
     modes.innerHTML=`<button type="button" class="chip on" data-mode="vehicle" id="mode-veh">Vehicles</button>
       <button type="button" class="chip" data-mode="category" id="mode-cat">Categories</button>
       <button type="button" class="chip" id="imgq-btn">Search by image</button>
+      <button type="button" class="chip" id="myph-btn" hidden>My photos</button>
       <input type="file" id="imgq-file" accept="image/*" capture="environment" hidden>
       <input type="file" id="own-file-cam" accept="image/*" capture="environment" hidden>
       <input type="file" id="own-file-gal" accept="image/*" multiple hidden>`;
@@ -318,7 +321,7 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
   /* ---------- Images (shipped + owner) ---------- */
   function shippedSrc(im){ return im.f; }
   function kindLabel(im){
-    if(im.own) return 'Own photo';
+    if(im.own) return 'My photo';
     const k=(im.k||'photo').toLowerCase();
     if(k==='diagram') return 'Diagram';
     if(k==='image') return 'Image';
@@ -358,8 +361,9 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
     const rows=slice.map((r,i)=>{
       const score=imgHits && r._sim!=null? `<div class="xref">Similarity ${Math.round(r._sim*100)}%${r._simApprox?' · <span class="badge approx">Approximate – typical '+esc(r._simTyp||'part')+'</span>':''}</div>`:'';
       const imgs=r._dispImgs||r._imgs;
+      const my=ownSkuSet.has(r._sku)?'<span class="badge own">My photo</span> ':'';
       return `<tr data-i="${i}">
-        <td><div class="td-item">${thumbHtml(imgs)}<div><b>${esc(r._sku)}</b>${priceHtml(r)}${xrefHtml(r,false)}${score}</div></div></td>
+        <td><div class="td-item">${thumbHtml(imgs)}<div><b>${esc(r._sku)}</b> ${my}${priceHtml(r)}${xrefHtml(r,false)}${score}</div></div></td>
         <td>${esc(r._desc)}</td>
         <td>${esc(r._brand)}</td>
         <td>${appText(r).map(x=>'<span class="tag">'+esc(x)+'</span>').join(' ')}</td>
@@ -480,7 +484,7 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
     if(takeBtn) takeBtn.onclick=()=>{ const i=$('own-file-cam'); i.dataset.sku=r._sku; i.click(); };
     if(galBtn) galBtn.onclick=()=>{ const i=$('own-file-gal'); i.dataset.sku=r._sku; i.click(); };
     $('det').querySelectorAll('.del-own').forEach(btn=>{
-      btn.onclick=async ev=>{ ev.stopPropagation(); await deleteOwn(btn.dataset.del); toast('Photo removed'); openDetails(r); draw(); };
+      btn.onclick=async ev=>{ ev.stopPropagation(); await deleteOwn(btn.dataset.del); await refreshOwnIndex(); toast('Photo removed'); openDetails(r); draw(); if($('myphotos-sec') && !$('myphotos-sec').hidden) renderMyPhotos(); };
     });
   }
 
@@ -510,19 +514,25 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
   function updateOwnerBtn(){
     const b=$('ownerBtn'); if(!b) return;
     b.textContent=ownerOn?'Owner ✓':'Owner';
-    b.title=ownerOn?'Owner mode on — tap to lock or export':'Owner mode';
+    b.title=ownerOn?'Owner mode on — tap for My photos, export or lock':'Owner mode';
+    const mb=$('myph-btn'); if(mb) mb.hidden=!ownerOn;
+    if(!ownerOn && $('myphotos-sec')) $('myphotos-sec').hidden=true;
   }
   function ownerMenu(){
     openModal(`<h3>Owner mode</h3>
-      <p>Photos you add stay on this device and work offline. Export a file to include them in the next published release.</p>
+      <p>Photos you add stay on this device and work offline. Open My photos to browse them, or export a file to include them in the next published release.</p>
       <div class="row">
-        <button type="button" id="own-export">Export my photos</button>
-        <button type="button" class="ghost" id="own-lock">Lock</button>
+        <button type="button" id="own-gallery">My photos</button>
+        <button type="button" class="ghost" id="own-export">Export my photos</button>
       </div>
-      <div class="row"><button type="button" class="ghost" id="own-cancel">Close</button></div>`);
+      <div class="row">
+        <button type="button" class="ghost" id="own-lock">Lock</button>
+        <button type="button" class="ghost" id="own-cancel">Close</button>
+      </div>`);
     $('own-cancel').onclick=closeModal;
     $('own-lock').onclick=()=>{ setUnlocked(false); closeModal(); toast('Owner mode locked'); draw(); if($('det').classList.contains('open')){ const sku=$('det').querySelector('h2'); if(sku){ const r=bySku[sku.textContent]; if(r) openDetails(r);} } };
     $('own-export').onclick=()=>{ closeModal(); exportOwn(); };
+    $('own-gallery').onclick=()=>{ closeModal(); openMyPhotos(); };
   }
   function askSetPin(){
     openModal(`<h3>Set owner PIN</h3>
@@ -632,7 +642,9 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
       }catch(err){ toast('Could not save photo'); }
     }
     toast('Photo'+(files.length>1?'s':'')+' saved on this device');
+    await refreshOwnIndex();
     const r=bySku[sku]; if(r){ openDetails(r); draw(); }
+    if($('myphotos-sec') && !$('myphotos-sec').hidden) renderMyPhotos();
   }
   if($('own-file-cam')) $('own-file-cam').onchange=onOwnFiles;
   if($('own-file-gal')) $('own-file-gal').onchange=onOwnFiles;
@@ -1257,6 +1269,296 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
     efpShowDiagram('service');
   }
 
+
+  /* ---------- Advanced search + My photos ---------- */
+  function fuelOf(desc){
+    const d=desc||'';
+    const tags=[];
+    if(/\bDIESEL\b/i.test(d) && !/DIESEL TECHNIC/i.test(d) && !/DIESEL PARTICULATE/i.test(d)) tags.push('Diesel');
+    if(/\b(PETROL|GASOLINE)\b/i.test(d)) tags.push('Petrol');
+    if(/\bHYBRID\b/i.test(d)) tags.push('Hybrid');
+    return tags;
+  }
+  function varTagsOf(desc){
+    const d=desc||'';
+    const tags=[];
+    if(/\b2WD\b/i.test(d)) tags.push('2WD');
+    if(/\b4WD\b/i.test(d) || /\b4X4\b/i.test(d)) tags.push('4WD');
+    if(/\bAWD\b/i.test(d)) tags.push('AWD');
+    if(/\bA\/T\b/i.test(d) || /AUTOMATIC TRANSMISSION/i.test(d) || /AUTOMATIC TRANSAXLE/i.test(d)) tags.push('Automatic');
+    if(/\bM\/T\b/i.test(d) || /MANUAL TRANSMISSION/i.test(d) || /MANUAL TRANSAXLE/i.test(d)) tags.push('Manual');
+    if(/\bCVT\b/i.test(d) && !/CVT-\d/i.test(d)) tags.push('CVT');
+    return tags;
+  }
+  function yearRangeHit(ranges, y0, y1){
+    if(!y0 && !y1) return true;
+    if(!ranges||!ranges.length) return false;
+    const from=y0?+y0:-Infinity, to=y1?+y1:Infinity;
+    return ranges.some(([a,b])=>{
+      const lo=a, hi=(b?b:Infinity);
+      return lo<=to && hi>=from;
+    });
+  }
+  function pnHit(r, q){
+    if(!q) return true;
+    const raw=q.trim(); if(!raw) return true;
+    const n=(typeof N==='function'?N(raw):raw.toUpperCase().replace(/[-\s.\/]/g,''));
+    if(n && (typeof N==='function'?N(r._sku):r._sku).indexOf(n)>=0) return true;
+    if((r._xrefs||[]).some(x=>(typeof N==='function'?N(x):String(x).toUpperCase().replace(/[-\s.\/]/g,'')).indexOf(n)>=0)) return true;
+    return false;
+  }
+  ROWS.forEach(r=>{
+    r._fuel=fuelOf(r._desc);
+    r._vtags=varTagsOf(r._desc);
+    const shipped=IMGS[r._sku];
+    r._exact=!!(shipped && shipped.some(im=>{ const k=(im.k||'photo').toLowerCase(); return k!=='approx' && k!=='approximate'; }));
+  });
+  function readAdv(){
+    const num=id=>{ const el=$(id); if(!el||el.value==='') return ''; const n=+el.value; return isFinite(n)?n:''; };
+    return {
+      make:$('adv_make')?$('adv_make').value:'',
+      model:$('adv_model')?$('adv_model').value:'',
+      y0:$('adv_y0')?$('adv_y0').value:'',
+      y1:$('adv_y1')?$('adv_y1').value:'',
+      eng:$('adv_eng')?$('adv_eng').value:'',
+      fuel:$('adv_fuel')?$('adv_fuel').value:'',
+      tag:$('adv_tag')?$('adv_tag').value:'',
+      cat:$('adv_cat')?$('adv_cat').value:'',
+      brand:$('adv_brand')?$('adv_brand').value:'',
+      pmin:num('adv_pmin'),
+      pmax:num('adv_pmax'),
+      pn:$('adv_pn')?$('adv_pn').value.trim():'',
+      exact:!!($('adv_exact')&&$('adv_exact').checked),
+      priced:!!($('adv_priced')&&$('adv_priced').checked)
+    };
+  }
+  function advHasFilters(f){
+    f=f||readAdv();
+    return !!(f.make||f.model||f.y0||f.y1||f.eng||f.fuel||f.tag||f.cat||f.brand||f.pmin!==''||f.pmax!==''||f.pn||f.exact||f.priced);
+  }
+  function advMatch(r,f){
+    if(f.make){
+      const ok=r._apps.some(a=>a.make===f.make && (f.model==='' || (f.model==='__NONE__'? !a.model : a.model===f.model)));
+      if(!ok) return false;
+    } else if(f.model){
+      const want=f.model==='__NONE__'?'':f.model;
+      if(!r._apps.some(a=>a.model===want)) return false;
+    }
+    if(!yearRangeHit(r._years, f.y0, f.y1)) return false;
+    if(f.eng && !(r._eng||[]).includes(f.eng)) return false;
+    if(f.fuel && !(r._fuel||[]).includes(f.fuel)) return false;
+    if(f.tag && !(r._vtags||[]).includes(f.tag)) return false;
+    if(f.cat && r._cat!==f.cat) return false;
+    if(f.brand && r._brand!==f.brand) return false;
+    const price=(r._price&&r._price[0]!=null)?+r._price[0]:null;
+    if(f.priced && price==null) return false;
+    if(f.pmin!=='' || f.pmax!==''){
+      if(price==null) return false;
+      if(f.pmin!=='' && price<f.pmin) return false;
+      if(f.pmax!=='' && price>f.pmax) return false;
+    }
+    if(f.exact && !r._exact) return false;
+    if(f.pn && !pnHit(r,f.pn)) return false;
+    return true;
+  }
+  function applyAdvRun(){
+    const f=readAdv();
+    const pool=ROWS.filter(r=>advMatch(r,f));
+    const cc={}; pool.forEach(r=>cc[r._cat]=(cc[r._cat]||0)+1);
+    if($('chips')) $('chips').innerHTML=`<button type="button" class="chip ${cat?'':'on'}" data-c="">All ${pool.length}</button>`+
+      Object.keys(cc).sort((a,b)=>cc[b]-cc[a]).map(c=>`<button type="button" class="chip ${c===cat?'on':''}" data-c="${esc(c)}">${esc(c)} ${cc[c]}</button>`).join('');
+    res=cat?pool.filter(r=>r._cat===cat):pool;
+    if($('vt')) $('vt').innerHTML='Advanced search';
+    shown=STEP; draw();
+    if($('adv-count')) $('adv-count').textContent=res.length.toLocaleString()+' matches';
+  }
+  function fillAdvModels(keep){
+    const mk=$('adv_make')?$('adv_make').value:'';
+    const sel=$('adv_model'); if(!sel) return;
+    const items=[];
+    if(mk){
+      Object.keys(modelCount).forEach(k=>{
+        if(k.startsWith(mk+'|')) items.push({model:k.slice(mk.length+1), n:modelCount[k]});
+      });
+    } else {
+      const agg={};
+      Object.keys(modelCount).forEach(k=>{
+        const md=k.split('|').slice(1).join('|');
+        if(!md) return;
+        agg[md]=(agg[md]||0)+modelCount[k];
+      });
+      Object.keys(agg).forEach(md=>items.push({model:md,n:agg[md]}));
+    }
+    items.sort((a,b)=>b.n-a.n||a.model.localeCompare(b.model));
+    const cur=keep!=null?keep:sel.value;
+    sel.innerHTML='<option value="">All models</option>'+items.map(it=>{
+      const val=it.model===''?'__NONE__':it.model;
+      const lab=it.model||'Unspecified (make only)';
+      return `<option value="${esc(val)}"${val===cur?' selected':''}>${esc(lab)} (${it.n})</option>`;
+    }).join('');
+    if(cur && ![...sel.options].some(o=>o.value===cur)) sel.value='';
+  }
+  function fillAdvOptions(){
+    const fuels=new Map(), tags=new Map(), years=new Set(), engs=new Set(), brands=new Map(), cats=new Map();
+    let nExact=0, nPriced=0, pricedMin=null, pricedMax=null;
+    ROWS.forEach(r=>{
+      (r._fuel||[]).forEach(x=>fuels.set(x,(fuels.get(x)||0)+1));
+      (r._vtags||[]).forEach(x=>tags.set(x,(tags.get(x)||0)+1));
+      (r._years||[]).forEach(([a,b])=>{ if(a) years.add(a); if(b) years.add(b); });
+      (r._eng||[]).forEach(e=>engs.add(e));
+      if(r._brand) brands.set(r._brand,(brands.get(r._brand)||0)+1);
+      if(r._cat) cats.set(r._cat,(cats.get(r._cat)||0)+1);
+      if(r._exact) nExact++;
+      const p=r._price&&r._price[0]!=null?+r._price[0]:null;
+      if(p!=null){ nPriced++; pricedMin=pricedMin==null?p:Math.min(pricedMin,p); pricedMax=pricedMax==null?p:Math.max(pricedMax,p); }
+    });
+    const opt=(sel, first, entries, selected)=>{
+      if(!sel) return;
+      sel.innerHTML=`<option value="">${first}</option>`+entries.map(([v,n])=>`<option value="${esc(v)}">${esc(v)}${n!=null?' ('+n+')':''}</option>`).join('');
+      if(selected) sel.value=selected;
+    };
+    opt($('adv_make'), 'All makes', (MAKE_LIST||[]).map(m=>[m, makeCount[m]]));
+    fillAdvModels('');
+    const ylist=[...years].sort((a,b)=>a-b);
+    if($('adv_y0')) $('adv_y0').innerHTML='<option value="">Any</option>'+ylist.map(y=>`<option value="${y}">${y}</option>`).join('');
+    if($('adv_y1')) $('adv_y1').innerHTML='<option value="">Any</option>'+ylist.map(y=>`<option value="${y}">${y}</option>`).join('');
+    const hide=(id, on)=>{ const el=$(id); if(el) el.hidden=!on; };
+    hide('adv-y0-wrap', ylist.length>0); hide('adv-y1-wrap', ylist.length>0);
+    const elist=[...engs].sort();
+    if($('adv_eng')) $('adv_eng').innerHTML='<option value="">All engines</option>'+elist.map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join('');
+    hide('adv-eng-wrap', elist.length>0);
+    const fuelArr=[...fuels.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+    opt($('adv_fuel'), 'All fuels', fuelArr);
+    hide('adv-fuel-wrap', fuelArr.length>0);
+    const tagArr=[...tags.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+    opt($('adv_tag'), 'All tags', tagArr);
+    hide('adv-tag-wrap', tagArr.length>0);
+    const catArr=[...cats.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+    opt($('adv_cat'), 'All categories', catArr);
+    hide('adv-cat-wrap', catArr.length>0);
+    const brandArr=[...brands.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+    opt($('adv_brand'), 'All brands', brandArr);
+    hide('adv-brand-wrap', brandArr.length>0);
+    hide('adv-exact-wrap', nExact>0);
+    hide('adv-priced-wrap', nPriced>0);
+    hide('adv-pmin-wrap', nPriced>0);
+    hide('adv-pmax-wrap', nPriced>0);
+    if($('adv_pmin')) $('adv_pmin').placeholder='Min';
+    if($('adv_pmax')) $('adv_pmax').placeholder='Max';
+    if($('adv-count')) $('adv-count').textContent=ROWS.length.toLocaleString()+' parts';
+  }
+  function efpInitAdv(){
+    if(!$('adv-sec')) return;
+    fillAdvOptions();
+    const onMake=()=>{ fillAdvModels(''); bumpAdv(); };
+    const bumpAdv=()=>{
+      if(advHasFilters()) applyAdvRun();
+      else {
+        if($('adv-count')) $('adv-count').textContent=ROWS.length.toLocaleString()+' parts';
+        if(typeof run==='function') run();
+      }
+    };
+    let tmr=null;
+    const live=()=>{ clearTimeout(tmr); tmr=setTimeout(bumpAdv, 120); };
+    if($('adv_make')) $('adv_make').addEventListener('change', onMake);
+    ['adv_model','adv_y0','adv_y1','adv_eng','adv_fuel','adv_tag','adv_cat','adv_brand','adv_exact','adv_priced'].forEach(id=>{
+      const el=$(id); if(!el) return;
+      el.addEventListener('change', bumpAdv);
+    });
+    ['adv_pmin','adv_pmax','adv_pn'].forEach(id=>{
+      const el=$(id); if(!el) return;
+      el.addEventListener('input', live);
+    });
+    if($('adv_clear')) $('adv_clear').onclick=()=>{
+      ['adv_make','adv_model','adv_y0','adv_y1','adv_eng','adv_fuel','adv_tag','adv_cat','adv_brand','adv_pmin','adv_pmax','adv_pn'].forEach(id=>{ if($(id)) $(id).value=''; });
+      if($('adv_exact')) $('adv_exact').checked=false;
+      if($('adv_priced')) $('adv_priced').checked=false;
+      fillAdvModels('');
+      cat=''; shown=STEP;
+      if($('adv-count')) $('adv-count').textContent=ROWS.length.toLocaleString()+' parts';
+      if(typeof run==='function') run();
+    };
+    const _runSaved=window.run;
+    window.run=function(){
+      if(!imgHits && advHasFilters()){ applyAdvRun(); return; }
+      _runSaved();
+      if($('adv-count') && !advHasFilters()) $('adv-count').textContent=ROWS.length.toLocaleString()+' parts';
+    };
+  }
+  async function refreshOwnIndex(){
+    try{
+      const all=await allOwn();
+      ownSkuSet=new Set((all||[]).map(p=>p.sku));
+    }catch(e){ ownSkuSet=new Set(); }
+  }
+  async function renderMyPhotos(){
+    const grid=$('myph-grid'), empty=$('myph-empty'); if(!grid) return;
+    myphUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(e){} });
+    myphUrls=[];
+    let rows=[];
+    try{ rows=await allOwn(); }catch(e){ rows=[]; }
+    const q=($('myph_q')&&$('myph_q').value||'').trim().toUpperCase();
+    const nq=q && (typeof N==='function'?N(q):q.replace(/[-\s.\/]/g,''));
+    const items=rows.slice().sort((a,b)=> (b.ts||0)-(a.ts||0)).filter(p=>{
+      if(!q) return true;
+      const sku=(p.sku||'').toUpperCase();
+      const r=bySku[p.sku];
+      const desc=((r&&r._desc)||'').toUpperCase();
+      if(sku.includes(q) || desc.includes(q)) return true;
+      if(nq && (typeof N==='function'?N(p.sku):sku).includes(nq)) return true;
+      return false;
+    });
+    grid.innerHTML=items.map(p=>{
+      const url=URL.createObjectURL(p.blob);
+      myphUrls.push(url);
+      const r=bySku[p.sku];
+      const desc=r?r._desc:'';
+      return `<div class="myph-card" data-sku="${esc(p.sku)}" data-id="${esc(p.id)}">
+        <img src="${esc(url)}" alt="My photo of ${esc(p.sku)}">
+        <b>${esc(p.sku)}</b>
+        <div class="myph-desc">${esc(desc)}</div>
+        <button type="button" class="ghost myph-del" data-del="${esc(p.id)}">Remove</button>
+      </div>`;
+    }).join('');
+    if(empty){ empty.hidden=items.length>0; empty.textContent=rows.length&&!items.length?'No photos match that part number.':'No uploaded photos yet.'; }
+    grid.querySelectorAll('.myph-card').forEach(card=>{
+      card.addEventListener('click', ev=>{
+        if(ev.target.closest('.myph-del')) return;
+        const r=bySku[card.dataset.sku];
+        if(r) openDetails(r);
+      });
+    });
+    grid.querySelectorAll('.myph-del').forEach(btn=>{
+      btn.addEventListener('click', async ev=>{
+        ev.stopPropagation();
+        await deleteOwn(btn.dataset.del);
+        await refreshOwnIndex();
+        toast('Photo removed');
+        renderMyPhotos();
+        draw();
+        if($('det').classList.contains('open')){
+          const h=$('det').querySelector('h2');
+          if(h && bySku[h.textContent]) openDetails(bySku[h.textContent]);
+        }
+      });
+    });
+  }
+  function openMyPhotos(){
+    const sec=$('myphotos-sec'); if(!sec) return;
+    sec.hidden=false;
+    renderMyPhotos();
+    sec.scrollIntoView({behavior:'smooth', block:'start'});
+    if($('myph_q')) $('myph_q').focus();
+  }
+  function efpInitMyPhotos(){
+    if($('myph-btn')) $('myph-btn').onclick=()=>openMyPhotos();
+    if($('myph_close')) $('myph_close').onclick=()=>{ if($('myphotos-sec')) $('myphotos-sec').hidden=true; };
+    let t=null;
+    if($('myph_q')) $('myph_q').addEventListener('input', ()=>{ clearTimeout(t); t=setTimeout(renderMyPhotos, 120); });
+    refreshOwnIndex().then(()=>{ if(ownSkuSet.size) draw(); });
+    updateOwnerBtn();
+  }
+
     window.efpOpenPart=function(sku){
     const r=bySku[sku]||ROWS.find(x=>x._sku===sku);
     if(!r){ toast('Part not in the catalogue'); return; }
@@ -1271,6 +1573,8 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
   };
   efpInitHome();
   efpInitDiagrams();
+  efpInitAdv();
+  efpInitMyPhotos();
   if(window._efpOpenSku) window.efpOpenPart(window._efpOpenSku);
   }
 

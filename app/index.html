@@ -158,6 +158,18 @@ html.dark .stk.out,body.dark .stk.out{background:#3a1515;color:#f0a0a0}
 .diag-item b{font-size:13px}
 #diag-btn.on{background:linear-gradient(180deg,#e31c3d,#C8102E);color:#fff;border-color:transparent}
 
+.adv-checks{display:flex;flex-wrap:wrap;gap:10px 16px;margin:8px 0}
+.adv-checks label{font-size:13px;font-weight:600;color:var(--tx);text-transform:none;letter-spacing:0;flex-direction:row;align-items:center;gap:6px;display:flex}
+.adv-actions{justify-content:space-between;margin-top:8px}
+#adv-count{margin:0;font-weight:700;color:var(--cu);min-height:auto}
+.myph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:10px}
+.myph-card{border:1px solid var(--bd);border-radius:12px;padding:8px;background:var(--card);cursor:pointer;text-align:left;color:inherit}
+.myph-card img{width:100%;height:110px;object-fit:cover;border-radius:8px;background:var(--hl);display:block}
+.myph-card b{display:block;margin-top:6px;font-size:13px}
+.myph-card .myph-desc{font-size:11px;color:var(--mu);margin:2px 0 6px}
+.myph-card .myph-del{font-size:11px}
+#myph-btn[hidden],#myphotos-sec[hidden]{display:none !important}
+
 @media(max-width:800px){.wrap{grid-template-columns:1fr}}
 </style>
 </head>
@@ -206,6 +218,42 @@ html.dark .stk.out,body.dark .stk.out{background:#3a1515;color:#f0a0a0}
     <input id="var_q" placeholder="Item no. / OEM / keyword" aria-label="Keyword">
     <button type="button" id="var_go">Search variants</button>
   </div>
+</section>
+<section class="home-sec" id="adv-sec">
+  <h2>Advanced search</h2>
+  <p class="home-lead">Combine filters to narrow the catalogue. This is separate from the VIN search and the basic variant search above. Works offline. Filters with no data in the catalogue are hidden.</p>
+  <div class="home-grid-var" id="adv-grid">
+    <label id="adv-make-wrap">Make<select id="adv_make"><option value="">All makes</option></select></label>
+    <label id="adv-model-wrap">Model<select id="adv_model"><option value="">All models</option></select></label>
+    <label id="adv-y0-wrap">Year from<select id="adv_y0"><option value="">Any</option></select></label>
+    <label id="adv-y1-wrap">Year to<select id="adv_y1"><option value="">Any</option></select></label>
+    <label id="adv-eng-wrap">Engine size / code<select id="adv_eng"><option value="">All engines</option></select></label>
+    <label id="adv-fuel-wrap" hidden>Fuel<select id="adv_fuel"><option value="">All fuels</option></select></label>
+    <label id="adv-tag-wrap" hidden>Variant tags<select id="adv_tag"><option value="">All tags</option></select></label>
+    <label id="adv-cat-wrap">Category<select id="adv_cat"><option value="">All categories</option></select></label>
+    <label id="adv-brand-wrap">Brand<select id="adv_brand"><option value="">All brands</option></select></label>
+    <label id="adv-pmin-wrap">Price from (AED)<input id="adv_pmin" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Min"></label>
+    <label id="adv-pmax-wrap">Price to (AED)<input id="adv_pmax" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Max"></label>
+    <label id="adv-pn-wrap">Part number / cross-ref<input id="adv_pn" placeholder="Item no. or cross-ref" autocomplete="off" spellcheck="false"></label>
+  </div>
+  <div class="adv-checks" id="adv-checks">
+    <label id="adv-exact-wrap"><input type="checkbox" id="adv_exact"> Has exact photo</label>
+    <label id="adv-priced-wrap"><input type="checkbox" id="adv_priced"> Has price</label>
+  </div>
+  <div class="home-row adv-actions">
+    <span id="adv-count" class="home-msg" role="status"></span>
+    <button type="button" class="ghost" id="adv_clear">Clear filters</button>
+  </div>
+</section>
+<section class="home-sec" id="myphotos-sec" hidden>
+  <h2>My photos</h2>
+  <p class="home-lead">Photos you uploaded on this device. Search by part number; tap a photo to open that part.</p>
+  <div class="home-row">
+    <input id="myph_q" placeholder="Search by part number" aria-label="Search my photos" autocomplete="off">
+    <button type="button" class="ghost" id="myph_close">Close</button>
+  </div>
+  <div id="myph-grid" class="myph-grid"></div>
+  <p id="myph-empty" class="home-lead" hidden>No uploaded photos yet.</p>
 </section>
 <section class="home-sec" id="diagram-sec">
   <h2>Parts diagrams</h2>
