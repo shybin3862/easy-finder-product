@@ -17,6 +17,7 @@ jobs:
           cp app/index.html app/manifest.json app/sw.js site/
           [ -f app/extras.js ] && cp app/extras.js site/
           [ -f app/embeddings.json ] && cp app/embeddings.json site/
+          [ -f app/pf-data.json ] && cp app/pf-data.json site/
           for f in icon-180 icon-192 icon-512 icon-512-maskable favicon logo; do
             base64 -d app/$f.png.b64 > site/$f.png
           done

@@ -1,6 +1,9 @@
 /* Easy Finder Product: categories, cross-refs, photos, owner mode, image search. */
 (function(){
-  if(typeof RAW==='undefined'||typeof ROWS==='undefined') return;
+  function efpStartExtras(){
+  if(typeof RAW==='undefined'||typeof ROWS==='undefined'||!ROWS.length||!ROWS[0]._sku) return;
+  if(window._efpExtrasOn) return;
+  window._efpExtrasOn=true;
   const XREFS=RAW.xrefs||{};
   const IMGS=RAW.imgs||{};
   const APPROX=RAW.approx||{};
@@ -124,6 +127,20 @@
   const PRICES=RAW.prices||{};
   const fmtAED=n=>Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   /* price: [incl_vat, ex_vat, pack, discontinued]; no price (or null) -> "Price on request" */
+  function availText(r){
+    const p=r._price;
+    if(p && p.length>4 && p[4]!=null && p[4]!==''){
+      const n=+p[4];
+      if(n>0) return 'In stock: '+n;
+      if(n===0) return 'Out of stock';
+    }
+    return 'Ask for availability';
+  }
+  function availHtml(r){
+    const t=availText(r);
+    const cls=t.startsWith('In stock')?'ok':(t==='Out of stock'?'out':'ask');
+    return `<span class="stk ${cls}">${esc(t)}</span>`;
+  }
   function priceHtml(r){
     const p=r._price;
     if(!p||p[0]==null) return '<div class="price none">Price on request</div>';
@@ -221,7 +238,8 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
       <button type="button" class="chip" data-mode="category" id="mode-cat">Categories</button>
       <button type="button" class="chip" id="imgq-btn">Search by image</button>
       <input type="file" id="imgq-file" accept="image/*" capture="environment" hidden>
-      <input type="file" id="own-file" accept="image/*" multiple hidden>`;
+      <input type="file" id="own-file-cam" accept="image/*" capture="environment" hidden>
+      <input type="file" id="own-file-gal" accept="image/*" multiple hidden>`;
     top.insertBefore(modes, top.firstChild);
     const st=document.createElement('div');
     st.id='imgq-status';
@@ -440,14 +458,16 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
         <img src="${esc(im.f)}" alt="${esc(kindLabel(im))}" data-full="${esc(im.f)}">
         <figcaption><span class="badge ${im.own?'own':''}">${esc(kindLabel(im))}</span>${im.own&&ownerOn?`<button type="button" class="del-own" data-del="${esc(im.id)}">Remove</button>`:''}</figcaption>
       </figure>`).join('')}</div>`:`<div class="k">Pictures</div><p class="k" style="margin:4px 0 0">No picture on file for this part.</p>`;
-    const add=ownerOn?`<div class="add-photo"><button type="button" id="add-photo-btn">Add photo</button></div>`:'';
+    const add=ownerOn?`<div class="add-photo"><button type="button" id="take-photo-btn">Take photo</button><button type="button" class="ghost" id="gallery-photo-btn">Choose from gallery</button></div>`:'';
     $('det').innerHTML=`<button class="ghost" onclick="document.getElementById('det').classList.remove('open')" style="float:right">\u2715</button>
       <h2>${esc(r._sku)}</h2>
       ${priceDetail(r)}
+      <div class="k">Availability</div>${availHtml(r)}
       <div class="k">Description</div>${esc(r._desc)}
       <div class="k">Brand</div>${esc(r._brand)}
       <div class="k">Category</div>${esc(r._cat)}
       <div class="k">UoM</div>${esc(r._uom)||'\u2014'}
+      ${efpDiagramLink(r)}
       <div class="k">Cross ref</div>${(r._xrefs&&r._xrefs.length)?r._xrefs.map(x=>`<button type="button" class="xchip" data-copy="${esc(x)}">${esc(x)}</button>`).join(' '):'\u2014'}
       ${gal}${add}
       <div class="k">Application (from description)</div>${appText(r).join('<br>')||'\u2014'}
@@ -456,8 +476,9 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
       <p class="k">Confirm fitment before sale. These tags are parsed from the item description and are not verified fitment. Stock quantities are not shown. Prices are in AED incl. 5% VAT as per the price list; confirm before sale.</p>`;
     $('det').classList.add('open');
     $('det').querySelectorAll('img[data-full]').forEach(im=>im.onclick=ev=>{ ev.stopPropagation(); openLightbox(im.dataset.full); });
-    const addBtn=$('add-photo-btn');
-    if(addBtn) addBtn.onclick=()=>{ $('own-file').dataset.sku=r._sku; $('own-file').click(); };
+    const takeBtn=$('take-photo-btn'), galBtn=$('gallery-photo-btn');
+    if(takeBtn) takeBtn.onclick=()=>{ const i=$('own-file-cam'); i.dataset.sku=r._sku; i.click(); };
+    if(galBtn) galBtn.onclick=()=>{ const i=$('own-file-gal'); i.dataset.sku=r._sku; i.click(); };
     $('det').querySelectorAll('.del-own').forEach(btn=>{
       btn.onclick=async ev=>{ ev.stopPropagation(); await deleteOwn(btn.dataset.del); toast('Photo removed'); openDetails(r); draw(); };
     });
@@ -601,7 +622,7 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
     const jpg=await new Promise(r=>c.toBlob(b=>r(b),'image/jpeg',0.8));
     return {blob:jpg||file, mime:(jpg&&jpg.type)||file.type||'image/jpeg'};
   }
-  if($('own-file')) $('own-file').onchange=async ev=>{
+  async function onOwnFiles(ev){
     const sku=ev.target.dataset.sku; const files=[...ev.target.files||[]]; ev.target.value='';
     if(!sku||!files.length||!ownerOn) return;
     for(const f of files){
@@ -612,7 +633,9 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
     }
     toast('Photo'+(files.length>1?'s':'')+' saved on this device');
     const r=bySku[sku]; if(r){ openDetails(r); draw(); }
-  };
+  }
+  if($('own-file-cam')) $('own-file-cam').onchange=onOwnFiles;
+  if($('own-file-gal')) $('own-file-gal').onchange=onOwnFiles;
 
   /* ZIP (STORE) writer for export */
   function crc32(u8){
@@ -836,4 +859,422 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
   clist();
   /* first paint already happened; refresh thumbs / chips */
   draw();
+
+  function efpDiagramLink(r){
+    const hit=efpDiagramForPart(r);
+    if(!hit) return '';
+    return `<div class="k">Diagram</div><button type="button" class="ghost" data-open-diag="${esc(hit.sys)}" data-hot="${esc(hit.hot)}">View on diagram · ${esc(hit.title)}</button>`;
+  }
+
+  /* ---------- VIN + variant search ---------- */
+  const VIN_WMI={
+    JTD:'Toyota',JTE:'Toyota',JTH:'Lexus',JT2:'Toyota',JT3:'Toyota',JT4:'Toyota',JT8:'Lexus',
+    JTN:'Toyota',JTK:'Toyota',JTL:'Toyota',JTM:'Toyota',JT1:'Toyota',JT7:'Toyota',
+    '4T1':'Toyota','4T3':'Toyota','4TA':'Toyota','5TD':'Toyota','5TE':'Toyota','5TF':'Toyota',
+    '2T1':'Toyota','7MU':'Toyota','JN1':'Nissan',JN6:'Nissan',JN8:'Nissan','1N4':'Nissan',
+    '3N1':'Nissan','5N1':'Nissan',JHM:'Honda',JHL:'Honda','1HG':'Honda','2HG':'Honda',
+    '19X':'Honda',SHH:'Honda',SHS:'Honda',KMH:'Hyundai',KMF:'Hyundai','5NM':'Hyundai',
+    'KM8':'Hyundai',KNA:'Kia',KND:'Kia',KNC:'Kia','5XY':'Kia',JMB:'Mitsubishi',JMY:'Mitsubishi',
+    JA3:'Mitsubishi',JA4:'Mitsubishi',JM1:'Mazda',JM3:'Mazda',JM7:'Mazda',JAA:'Isuzu',
+    JAB:'Isuzu',JAL:'Isuzu',JAS:'Isuzu',WBA:'BMW',WBS:'BMW',WBY:'BMW',WBX:'BMW',
+    '4US':'BMW',WDD:'Mercedes-Benz',WDF:'Mercedes-Benz',WDB:'Mercedes-Benz',WDY:'Mercedes-Benz',
+    '4JG':'Mercedes-Benz',WVW:'Volkswagen',WV1:'Volkswagen',WV2:'Volkswagen',WVG:'Volkswagen',
+    '3VW':'Volkswagen',WAU:'Audi',WA1:'Audi',TRU:'Audi',WP0:'Porsche',WP1:'Porsche',
+    '1FA':'Ford','1FB':'Ford','1FM':'Ford','1FT':'Ford','1ZV':'Ford','WF0':'Ford',
+    '1G1':'Chevrolet','1GC':'Chevrolet','1GN':'Chevrolet',KL1:'Chevrolet',JSA:'Suzuki',
+    JS3:'Suzuki',JS2:'Suzuki',SAL:'Land Rover',SAJ:'Jaguar','1C4':'Jeep','1C6':'Ram',
+    '1J4':'Jeep',VF3:'Peugeot',VF1:'Renault',VF7:'Citroen',YV1:'Volvo',YS3:'Saab',
+    JF1:'Subaru',JF2:'Subaru',SBM:'Mini',TMB:'Skoda',VSS:'Seat',W0L:'Opel',
+    ZFA:'Fiat',ZFF:'Ferrari',ZAM:'Maserati',NMT:'Toyota',MA1:'Mahindra',
+    '1G6':'Cadillac','1GT':'GMC','2G1':'Chevrolet',JNK:'Infiniti',JNR:'Infiniti',
+    JH4:'Acura','5YJ':'Tesla',SJK:'Nissan',SJN:'Nissan',KN1:'Kia',KNM:'Renault',
+    LVS:'Ford',LVV:'Chery',LFV:'Volkswagen',WUA:'Audi',W1K:'Mercedes-Benz',
+    W1N:'Mercedes-Benz',W1V:'Mercedes-Benz'
+  };
+  const VIN_YEAR={A:2010,B:2011,C:2012,D:2013,E:2014,F:2015,G:2016,H:2017,J:2018,K:2019,
+    L:2020,M:2021,N:2022,P:2023,R:2024,S:2025,T:2026,V:2027,W:2028,X:2029,Y:2030,
+    1:2031,2:2032,3:2033,4:2034,5:2035,6:2036,7:2037,8:2038,9:2039};
+  function cleanVin(s){ return String(s||'').toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,''); }
+  function resolveMake(name){
+    if(!name) return '';
+    const u=name.toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const list=(typeof MAKE_LIST!=='undefined'&&MAKE_LIST)||[];
+    return list.find(m=>m.toUpperCase().replace(/[^A-Z0-9]/g,'')===u)||'';
+  }
+  function decodeVin(raw){
+    const v=cleanVin(raw);
+    if(v.length!==17) return {ok:false, msg:'Enter a 17-character VIN (letters I, O and Q are not used).'};
+    const wmi=v.slice(0,3);
+    const makeName=VIN_WMI[wmi]||'';
+    const make=resolveMake(makeName);
+    const year=VIN_YEAR[v.charAt(9)]||'';
+    return {ok:true, vin:v, wmi, makeName, make, year};
+  }
+  function fillVariantModels(){
+    const ms=$('var_make'), md=$('var_model');
+    if(!ms||!md) return;
+    const mk=ms.value;
+    const keep=md.value;
+    let items=[];
+    if(mk){
+      Object.keys(modelCount).forEach(k=>{
+        if(k.startsWith(mk+'|')) items.push(k.slice(mk.length+1));
+      });
+    }else{
+      const agg={};
+      Object.keys(modelCount).forEach(k=>{ const m=k.split('|').slice(1).join('|'); if(m) agg[m]=1; });
+      items=Object.keys(agg);
+    }
+    items.sort((a,b)=>a.localeCompare(b));
+    md.innerHTML='<option value="">All models</option>'+items.map(m=>`<option value="${esc(m)}">${esc(m||'Unspecified')}</option>`).join('');
+    if(keep && [...md.options].some(o=>o.value===keep)) md.value=keep;
+  }
+  function syncVariantFromState(){
+    if($('var_make')) $('var_make').value=make||'';
+    fillVariantModels();
+    if($('var_model')) $('var_model').value=model===null?'':model;
+    if($('var_year')) $('var_year').value=year||'';
+    if($('var_eng')) $('var_eng').value=eng||'';
+    if($('var_q')&&$('q')) $('var_q').value=$('q').value;
+  }
+  function applyVariant(){
+    make=$('var_make')?$('var_make').value:'';
+    const mv=$('var_model')?$('var_model').value:'';
+    model=mv===''?null:mv;
+    year=$('var_year')?$('var_year').value:'';
+    eng=$('var_eng')?$('var_eng').value:'';
+    if($('q')&&$('var_q')) $('q').value=$('var_q').value;
+    if($('year')) $('year').value=year;
+    if($('eng')) $('eng').value=eng;
+    cat=''; shown=STEP;
+    mlist(); vlist(); run();
+    const tbl=document.querySelector('.tbl'); if(tbl) tbl.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  function efpInitHome(){
+    const vinQ=$('vin_q'), vinGo=$('vin_go'), vinMsg=$('vin_msg');
+    if(vinGo){
+      const go=()=>{
+        const d=decodeVin(vinQ&&vinQ.value);
+        if(!d.ok){ if(vinMsg) vinMsg.textContent=d.msg; return; }
+        make=d.make||''; model=null; year=d.year?String(d.year):''; eng=''; cat='';
+        if($('q')) $('q').value='';
+        if($('year')) $('year').value=year;
+        if($('eng')) $('eng').value='';
+        mlist(); vlist(); run();
+        syncVariantFromState();
+        let msg;
+        if(d.make && d.year) msg=`VIN ${d.vin}: ${d.make}, ${d.year}. Showing matching parts. Confirm fitment before sale.`;
+        else if(d.make) msg=`VIN ${d.vin}: ${d.make}. Year not decoded. Showing that make. Confirm fitment before sale.`;
+        else if(d.year) msg=`VIN ${d.vin}: year ${d.year}. Make not recognised from the VIN prefix ${d.wmi}. Narrow the variant search if you know the make.`;
+        else msg=`VIN ${d.vin} is valid, but the make (prefix ${d.wmi}) is not in this decoder. Use variant search.`;
+        if(vinMsg) vinMsg.textContent=msg;
+        const tbl=document.querySelector('.tbl'); if(tbl) tbl.scrollIntoView({behavior:'smooth',block:'start'});
+      };
+      vinGo.onclick=go;
+      if(vinQ) vinQ.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
+    }
+    const vm=$('var_make');
+    if(vm){
+      const list=(MAKE_LIST||[]).map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
+      vm.innerHTML='<option value="">All makes</option>'+list;
+      vm.onchange=fillVariantModels;
+    }
+    if($('var_go')) $('var_go').onclick=applyVariant;
+    if($('var_q')) $('var_q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); applyVariant(); } });
+    // keep variant fields in sync when the side lists are used
+    const hook=(el,fn)=>{ if(!el||el._efpHooked) return; el._efpHooked=true; el.addEventListener('click',()=>setTimeout(syncVariantFromState,0)); };
+    hook($('mlist')); hook($('vlist')); hook($('chips'));
+    if($('year')) $('year').addEventListener('change',()=>{ year=$('year').value; syncVariantFromState(); });
+    if($('eng')) $('eng').addEventListener('change',()=>{ eng=$('eng').value; syncVariantFromState(); });
+    syncVariantFromState();
+    if($('modes') && !$('diag-btn')){
+      const b=document.createElement('button');
+      b.type='button'; b.className='chip'; b.id='diag-btn'; b.textContent='Diagrams';
+      b.onclick=()=>{ const s=$('diagram-sec'); if(s) s.scrollIntoView({behavior:'smooth',block:'start'}); };
+      $('modes').appendChild(b);
+    }
+    document.addEventListener('click',e=>{
+      const btn=e.target.closest('[data-open-diag]');
+      if(!btn) return;
+      e.preventDefault();
+      const s=$('diagram-sec'); if(s) s.scrollIntoView({behavior:'smooth',block:'start'});
+      efpShowDiagram(btn.dataset.openDiag, btn.dataset.hot);
+    });
+    // vehicle-results diagram hint
+    const bar=document.querySelector('.bar');
+    if(bar && !$('veh-diag')){
+      const b=document.createElement('button');
+      b.type='button'; b.className='ghost'; b.id='veh-diag'; b.textContent='Diagrams for this vehicle';
+      b.onclick=()=>{ const s=$('diagram-sec'); if(s){ s.scrollIntoView({behavior:'smooth',block:'start'}); efpShowDiagram('service'); } };
+      bar.appendChild(b);
+    }
+    const _run2=window.run;
+    window.run=function(){
+      _run2();
+      const on=!!(make||model!==null);
+      if($('veh-diag')) $('veh-diag').style.display=on?'':'none';
+      if($('year')&&$('var_year')){
+        const cur=year||$('var_year').value;
+        $('var_year').innerHTML=$('year').innerHTML;
+        $('var_year').value=cur||'';
+      }
+      if($('eng')&&$('var_eng')){
+        const cur=eng||$('var_eng').value;
+        $('var_eng').innerHTML=$('eng').innerHTML;
+        $('var_eng').value=cur||'';
+      }
+      syncVariantFromState();
+    };
+  }
+
+  /* ---------- Hand-built schematic diagrams (vector line drawings; not manufacturer art, not AI images) ---------- */
+  const DIAGS=[
+    {id:'service', title:'Service parts',
+      spots:[
+        {id:'oil-filter', n:1, title:'Oil filter', typ:['oil filter (spin-on)','oil filter (cartridge)'], cat:'Filters', x:86, y:118},
+        {id:'air-filter', n:2, title:'Air filter', typ:['air filter (panel)'], cat:'Filters', x:210, y:46},
+        {id:'cabin-filter', n:3, title:'Cabin filter', typ:['cabin filter'], cat:'Filters', x:430, y:70},
+        {id:'fuel-filter', n:4, title:'Fuel filter', typ:['fuel filter'], cat:'Filters', x:330, y:150},
+        {id:'spark-plug', n:5, title:'Spark plug', typ:['spark plug'], cat:'Electrical & Sensors', x:168, y:78},
+        {id:'engine-oil', n:6, title:'Engine oil', typ:['engine oil'], cat:'Lubricants & Fluids', x:40, y:200}
+      ],
+      svg:`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+        <rect x="110" y="70" width="160" height="110" rx="8"/>
+        <rect x="124" y="86" width="28" height="46" rx="3"/>
+        <rect x="158" y="86" width="28" height="46" rx="3"/>
+        <rect x="192" y="86" width="28" height="46" rx="3"/>
+        <rect x="226" y="86" width="28" height="46" rx="3"/>
+        <path d="M110 140 h160"/>
+        <path d="M70 118 h40"/>
+        <rect x="58" y="100" width="28" height="36" rx="6"/>
+        <path d="M72 100 v-10"/>
+        <rect x="190" y="28" width="70" height="34" rx="4"/>
+        <path d="M225 62 v8"/>
+        <rect x="400" y="36" width="86" height="50" rx="6"/>
+        <path d="M400 50 h-40 v40"/>
+        <circle cx="330" cy="150" r="16"/>
+        <path d="M314 150 h-30 M346 150 h30"/>
+        <path d="M168 78 v-8"/>
+        <rect x="18" y="176" width="36" height="52" rx="6"/>
+        <path d="M36 176 v-10 h8"/>
+        <text x="190" y="200" fill="currentColor" stroke="none" font-size="11" font-family="system-ui" font-weight="700">Engine bay (schematic)</text>
+      </g>`},
+    {id:'brakes', title:'Brakes',
+      spots:[
+        {id:'brake-pad', n:1, title:'Brake pads', typ:['brake pad'], cat:'Braking', x:150, y:80},
+        {id:'brake-disc', n:2, title:'Brake disc', typ:['brake disc'], cat:'Braking', x:150, y:150},
+        {id:'brake-shoe', n:3, title:'Brake shoes', typ:['brake shoe'], cat:'Braking', x:370, y:120},
+        {id:'brake-fluid', n:4, title:'Brake fluid', typ:['chemical / additive','brake (other)'], cat:'Braking', kw:/BRAKE FLUID/i, x:500, y:70}
+      ],
+      svg:`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+        <circle cx="150" cy="120" r="54"/>
+        <circle cx="150" cy="120" r="38"/>
+        <circle cx="150" cy="120" r="10"/>
+        <path d="M108 92 q14 28 0 56 M192 92 q-14 28 0 56"/>
+        <rect x="96" y="62" width="20" height="36" rx="3"/>
+        <rect x="184" y="62" width="20" height="36" rx="3"/>
+        <circle cx="370" cy="120" r="50"/>
+        <circle cx="370" cy="120" r="12"/>
+        <path d="M338 96 q32 8 32 24 q0 16 -32 24 M402 96 q-32 8 -32 24 q0 16 32 24"/>
+        <rect x="484" y="40" width="32" height="52" rx="4"/>
+        <path d="M500 40 v-10"/>
+        <text x="150" y="210" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" font-family="system-ui" font-weight="700">Disc brake</text>
+        <text x="370" y="210" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" font-family="system-ui" font-weight="700">Drum brake</text>
+      </g>`},
+    {id:'front-suspension', title:'Front suspension',
+      spots:[
+        {id:'shock', n:1, title:'Shock absorber / strut', typ:['shock absorber','strut'], cat:'Steering & Suspension', x:250, y:70},
+        {id:'strut-mount', n:2, title:'Strut mount', typ:['strut'], cat:'Steering & Suspension', kw:/MOUNTING KIT|STRUT MOUNT|MOUNT KIT/i, x:250, y:28},
+        {id:'spring', n:3, title:'Coil spring', typ:['coil spring'], cat:'Steering & Suspension', x:292, y:110},
+        {id:'link', n:4, title:'Stabilizer link', typ:['stabilizer / sway bar link'], cat:'Steering & Suspension', x:160, y:160},
+        {id:'bush', n:5, title:'Bushing', typ:['bushing'], cat:'Steering & Suspension', x:360, y:168}
+      ],
+      svg:`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M250 20 v30"/>
+        <rect x="236" y="18" width="28" height="12" rx="3"/>
+        <path d="M250 50 v70"/>
+        <path d="M238 70 h24 M238 82 h24 M238 94 h24 M238 106 h24"/>
+        <path d="M292 70 q8 10 0 20 q-8 10 0 20 q8 10 0 20 q-8 10 0 16"/>
+        <path d="M250 120 v30 M210 150 h80"/>
+        <circle cx="210" cy="150" r="8"/>
+        <circle cx="290" cy="150" r="8"/>
+        <path d="M160 160 h50"/>
+        <rect x="348" y="160" width="24" height="16" rx="4"/>
+        <circle cx="180" cy="188" r="22"/>
+        <circle cx="180" cy="188" r="10"/>
+        <text x="250" y="226" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" font-family="system-ui" font-weight="700">MacPherson-style front corner (schematic)</text>
+      </g>`},
+    {id:'rear-suspension', title:'Rear suspension',
+      spots:[
+        {id:'shock-r', n:1, title:'Rear shock absorber', typ:['shock absorber'], cat:'Steering & Suspension', x:250, y:60},
+        {id:'spring-r', n:2, title:'Rear spring', typ:['coil spring'], cat:'Steering & Suspension', x:170, y:90},
+        {id:'link-r', n:3, title:'Link', typ:['stabilizer / sway bar link','control arm'], cat:'Steering & Suspension', x:300, y:150},
+        {id:'bush-r', n:4, title:'Bushing', typ:['bushing'], cat:'Steering & Suspension', x:120, y:150}
+      ],
+      svg:`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M80 150 h360"/>
+        <path d="M250 20 v40"/>
+        <rect x="238" y="16" width="24" height="10" rx="2"/>
+        <path d="M250 60 v70"/>
+        <path d="M238 80 h24 M238 92 h24 M238 104 h24"/>
+        <path d="M170 50 q10 12 0 24 q-10 12 0 24 q10 12 0 24"/>
+        <path d="M300 150 v-40 h-50"/>
+        <rect x="108" y="142" width="24" height="16" rx="4"/>
+        <circle cx="400" cy="168" r="22"/>
+        <circle cx="400" cy="168" r="10"/>
+        <text x="250" y="226" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" font-family="system-ui" font-weight="700">Rear axle (schematic)</text>
+      </g>`},
+    {id:'cooling', title:'Cooling',
+      spots:[
+        {id:'radiator', n:1, title:'Radiator', typ:['radiator'], cat:'Cooling & Climate', x:120, y:110},
+        {id:'rad-cap', n:2, title:'Radiator cap', typ:['radiator cap'], cat:'Cooling & Climate', x:120, y:36},
+        {id:'water-pump', n:3, title:'Water pump', typ:['water pump'], cat:'Cooling & Climate', x:280, y:130},
+        {id:'thermostat', n:4, title:'Thermostat', typ:['thermostat'], cat:'Cooling & Climate', x:280, y:70},
+        {id:'hose', n:5, title:'Hose', typ:['hose'], cat:'Hardware & Hoses', kw:/RADIATOR HOSE|COOLANT HOSE|WATER HOSE/i, x:200, y:70}
+      ],
+      svg:`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+        <rect x="70" y="50" width="100" height="120" rx="6"/>
+        <path d="M82 70 h76 M82 90 h76 M82 110 h76 M82 130 h76 M82 150 h76"/>
+        <rect x="104" y="28" width="32" height="16" rx="3"/>
+        <path d="M170 70 h70 v40"/>
+        <circle cx="280" cy="70" r="16"/>
+        <circle cx="280" cy="130" r="22"/>
+        <path d="M280 92 v16"/>
+        <path d="M170 150 h70"/>
+        <text x="250" y="214" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" font-family="system-ui" font-weight="700">Cooling circuit (schematic)</text>
+      </g>`},
+    {id:'clutch', title:'Clutch',
+      spots:[
+        {id:'clutch-disc', n:1, title:'Clutch disc / kit', typ:['clutch kit / disc'], cat:'Transmission & Clutch', x:200, y:120},
+        {id:'clutch-cover', n:2, title:'Clutch cover', typ:['clutch kit / disc','clutch (other)'], cat:'Transmission & Clutch', kw:/CLUTCH COVER|PRESSURE PLATE/i, x:200, y:50},
+        {id:'release', n:3, title:'Release bearing', typ:['clutch release bearing'], cat:'Transmission & Clutch', x:280, y:120}
+      ],
+      svg:`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+        <circle cx="200" cy="120" r="70"/>
+        <circle cx="200" cy="120" r="54"/>
+        <circle cx="200" cy="120" r="16"/>
+        <path d="M200 66 v-20 h40"/>
+        <path d="M160 120 h-30 M240 120 h30"/>
+        <text x="200" y="220" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" font-family="system-ui" font-weight="700">Clutch pack (schematic)</text>
+      </g>`},
+    {id:'ignition', title:'Ignition',
+      spots:[
+        {id:'coil', n:1, title:'Ignition coil', typ:['ignition coil'], cat:'Electrical & Sensors', x:140, y:80},
+        {id:'plug', n:2, title:'Spark plug', typ:['spark plug'], cat:'Electrical & Sensors', x:300, y:130},
+        {id:'glow', n:3, title:'Glow plug', typ:['glow plug'], cat:'Electrical & Sensors', x:420, y:80}
+      ],
+      svg:`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+        <rect x="110" y="40" width="60" height="80" rx="6"/>
+        <path d="M140 120 v20 h160"/>
+        <path d="M300 140 v20"/>
+        <path d="M292 168 h16 v28 h-16 z"/>
+        <path d="M300 196 v16"/>
+        <rect x="400" y="50" width="44" height="70" rx="6"/>
+        <path d="M422 120 v40"/>
+        <text x="250" y="230" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" font-family="system-ui" font-weight="700">Ignition (schematic)</text>
+      </g>`}
+  ];
+
+  function efpDiagramForPart(r){
+    const typ=subtypeOf(r._desc,r._cat);
+    for(const d of DIAGS){
+      for(const s of d.spots){
+        if(s.typ && s.typ.includes(typ)) return {sys:d.id, hot:s.id, title:s.title};
+        if(s.kw && s.kw.test(r._desc||'')) return {sys:d.id, hot:s.id, title:s.title};
+      }
+    }
+    return null;
+  }
+  function efpPartsForSpot(spot){
+    const veh=!!(make||model!==null||year||eng);
+    const out=[];
+    for(const r of ROWS){
+      if(veh){
+        if(!appOk(r)) continue;
+        if(year && !yearHit(r._years,year)) continue;
+        if(eng && !r._eng.includes(eng)) continue;
+      }
+      const typ=subtypeOf(r._desc,r._cat);
+      const typOk=spot.typ && spot.typ.includes(typ);
+      const kwOk=spot.kw && spot.kw.test(r._desc||'');
+      if(spot.typ || spot.kw){ if(!(typOk||kwOk)) continue; }
+      else if(r._cat!==spot.cat) continue;
+      out.push(r);
+    }
+    out.sort((a,b)=>{
+      const ap=a._price&&a._price[0]!=null?0:1, bp=b._price&&b._price[0]!=null?0:1;
+      if(ap!==bp) return ap-bp;
+      const ae=(a._imgs&&a._imgs[0]&&a._imgs[0].k!=='approx')?0:1;
+      const be=(b._imgs&&b._imgs[0]&&b._imgs[0].k!=='approx')?0:1;
+      return ae-be;
+    });
+    return out;
+  }
+  function efpShowDiagram(id, hotId){
+    const d=DIAGS.find(x=>x.id===id)||DIAGS[0];
+    const stage=$('diag-stage'), tabs=$('diag-tabs'), pop=$('diag-pop');
+    if(tabs){
+      tabs.innerHTML=DIAGS.map(x=>`<button type="button" class="chip ${x.id===d.id?'on':''}" data-diag="${esc(x.id)}">${esc(x.title)}</button>`).join('');
+      tabs.onclick=e=>{ const b=e.target.closest('[data-diag]'); if(b) efpShowDiagram(b.dataset.diag); };
+    }
+    if(stage){
+      const marks=d.spots.map(s=>`
+        <g class="hot" data-hot="${esc(s.id)}" tabindex="0" role="button" aria-label="${esc(s.n+'. '+s.title)}">
+          <circle class="hot-hit" cx="${s.x}" cy="${s.y}" r="16" fill="#C8102E" fill-opacity="0.08" stroke="#C8102E" stroke-width="2"/>
+          <circle class="hot-num" cx="${s.x}" cy="${s.y}" r="11"/>
+          <text class="hot-n" x="${s.x}" y="${s.y+1}">${s.n}</text>
+        </g>`).join('');
+      stage.innerHTML=`<svg viewBox="0 0 560 250" role="img" aria-label="${esc(d.title)} schematic">${d.svg}${marks}</svg>
+        <p class="diag-leg">${esc(d.title)} · tap a number. ${make||model!==null?`Filtered to ${esc([make,model||''].filter(Boolean).join(' · ')||'the selected vehicle')}.`:'No vehicle selected — showing typical parts in each group.'} Drawings are schematic only.</p>`;
+      stage.querySelectorAll('.hot').forEach(g=>{
+        const open=()=>efpOpenHot(d, g.dataset.hot);
+        g.addEventListener('click',open);
+        g.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); open(); } });
+      });
+    }
+    if(hotId) efpOpenHot(d, hotId);
+    else if(pop) pop.hidden=true;
+    document.querySelectorAll('#diag-btn').forEach(b=>b.classList.add('on'));
+  }
+  function efpOpenHot(d, hotId){
+    const spot=d.spots.find(s=>s.id===hotId);
+    const pop=$('diag-pop'); if(!spot||!pop) return;
+    const parts=efpPartsForSpot(spot).slice(0,12);
+    const veh=!!(make||model!==null||year||eng);
+    pop.hidden=false;
+    pop.innerHTML=`<h3>${esc(spot.n)}. ${esc(spot.title)}</h3>
+      <p class="home-lead">${veh?'Matching parts for the selected vehicle.':'Top parts in this group. Select a vehicle in VIN or variant search to narrow the list.'}</p>
+      ${parts.length?parts.map(r=>{
+        const im=(r._dispImgs||r._imgs||[])[0];
+        const img=im&&im.f?`<img src="${esc(im.f)}" alt="${esc(kindLabel(im))}">`:'';
+        const pr=(r._price&&r._price[0]!=null)?`AED ${Number(r._price[0]).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} incl. 5% VAT`:'Price on request';
+        return `<div class="diag-item" data-sku="${esc(r._sku)}">${img}<div><b>${esc(r._sku)}</b> · ${esc(r._brand)}<div>${esc(r._desc)}</div><div>${pr} · ${availText(r)}</div></div></div>`;
+      }).join(''):'<p class="home-lead">No matching parts in the catalogue for this selection.</p>'}`;
+    // highlight
+    document.querySelectorAll('.hot').forEach(g=>g.style.opacity=g.dataset.hot===hotId?'1':'.65');
+  }
+  function efpInitDiagrams(){
+    efpShowDiagram('service');
+  }
+
+    window.efpOpenPart=function(sku){
+    const r=bySku[sku]||ROWS.find(x=>x._sku===sku);
+    if(!r){ toast('Part not in the catalogue'); return; }
+    if($('q')){ $('q').value=sku; }
+    cat=''; shown=STEP;
+    if(typeof run==='function') run();
+    openDetails(r);
+    const row=$('tb')&&[...$('tb').querySelectorAll('tr[data-i]')].find(tr=>{
+      const i=+tr.dataset.i; return res[i]&&res[i]._sku===sku;
+    });
+    if(row) row.scrollIntoView({block:'center',behavior:'smooth'});
+  };
+  efpInitHome();
+  efpInitDiagrams();
+  if(window._efpOpenSku) window.efpOpenPart(window._efpOpenSku);
+  }
+
+
+  efpStartExtras();
+  document.addEventListener('efp-data-ready', efpStartExtras);
 })();
