@@ -84,8 +84,13 @@
     ["pump (other)", /\bPUMP\b/i],
   ];
   const SUB_FALLBACK={"Bearings": "bearing", "Steering & Suspension": "steering / suspension part", "Braking": "brake (other)", "Engine Internals": "engine part", "Filters": "filter (other)", "Cooling & Climate": "cooling part", "Transmission & Clutch": "clutch (other)", "Hardware & Hoses": "hose", "Belts & Pulleys": "serpentine / V-ribbed belt", "Gaskets & Seals": "gasket / seal", "Body & Lighting": "bulb (other)", "Electrical & Sensors": "sensor", "Fuel System": "fuel system part", "Pumps": "pump (other)", "Lubricants & Fluids": "engine oil", "Turbo & Exhaust": "exhaust part", "Other Parts": "automotive spare part"};
+  const LUBE_RULES=[
+    ["ATF / transmission fluid", /\bMTF\b|\bGL-?[1-5]\b|\bCVT\b|\bSYN OEM\b|\bGEAR OIL\b|\bTRANSMISSION (OIL|FLUID)\b/i],
+    ["chemical / additive", /\bFLUSH\b|\bOCTANE\b|\bAXIS L\d|\bHYDRAULIC (OIL|FLUID)\b|\bPOWER STEERING\b|\bADDITIVE\b|\bCLEANER\b/i],
+  ];
   function subtypeOf(desc, cat){
     const d=desc||'';
+    if(cat==='Lubricants & Fluids'){ for(const [name,rx] of LUBE_RULES){ if(rx.test(d)) return name; } }
     for(const [name,rx] of SUB_RULES){ if(rx.test(d)) return name; }
     return SUB_FALLBACK[cat||'']||'automotive spare part';
   }
@@ -93,7 +98,7 @@
     if(IMGS[sku]&&IMGS[sku].length) return IMGS[sku];
     const t=subtypeOf(desc, cat);
     const rec=APPROX[t];
-    return rec?Object.assign({},rec,{typ:t,k:'approx'}):[];
+    return rec?[Object.assign({},rec,{typ:t,k:'approx'})]:[];
   }
   const PIN_H='efp-owner-hash', PIN_S='efp-owner-salt', PIN_OK='efp-owner-ok';
   const IDB_NAME='efp-owner-photos', IDB_STORE='photos';
@@ -116,7 +121,24 @@
   let modelP=null, embedder=null, catalogEmb=null;
   let toastT=null;
 
+  const PRICES=RAW.prices||{};
+  const fmtAED=n=>Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  /* price: [incl_vat, ex_vat, pack, discontinued]; no price (or null) -> "Price on request" */
+  function priceHtml(r){
+    const p=r._price;
+    if(!p||p[0]==null) return '<div class="price none">Price on request</div>';
+    const pk=(p[2]&&p[2]!=='Per unit')?` <span class="pk">\u00b7 ${esc(p[2])}</span>`:(p[2]==='Per unit'?' <span class="pk">\u00b7 per unit</span>':'');
+    return `<div class="price"><span class="cur">AED</span> <b>${fmtAED(p[0])}</b> <small>incl. 5% VAT</small>${pk}${p[3]?' <span class="disc">Discontinued</span>':''}</div>`;
+  }
+  function priceDetail(r){
+    const p=r._price;
+    if(!p||p[0]==null) return '<div class="k">Price</div><div class="price none big">Price on request</div>';
+    const ex=(p[1]!=null)?`<div class="k" style="margin-top:2px">AED ${fmtAED(p[1])} excl. VAT</div>`:'';
+    const pk=(p[2]&&p[2]!=='Per unit')?`<div class="k" style="margin-top:2px">Pack: ${esc(p[2])}</div>`:'<div class="k" style="margin-top:2px">Per unit</div>';
+    return `<div class="k">Price</div><div class="price big"><span class="cur">AED</span> <b>${fmtAED(p[0])}</b> <small>incl. 5% VAT</small>${p[3]?' <span class="disc">Discontinued</span>':''}</div>${ex}${pk}`;
+  }
   ROWS.forEach(r=>{
+    r._price=PRICES[r._sku]||null;
     r._xrefs=XREFS[r._sku]||[];
     r._imgs=shippedImgs(r._sku,r._desc,r._cat);
     if(r._xrefs.length){
@@ -167,6 +189,13 @@
 .side.cat-mode #clist{display:block}
 #imgq-status{font-size:12px;color:var(--mu);margin:6px 0 0}
 imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 6px}
+.price{margin-top:3px;font-size:12px;color:var(--mu)}
+.price b{color:var(--cu);font-size:15px;font-weight:800}
+.price .cur{font-weight:700;color:var(--cu);font-size:11px}
+.price .pk{color:var(--mu)}
+.price .disc{display:inline-block;background:#8a6a00;color:#fff;border-radius:6px;padding:0 6px;font-size:10px;font-weight:800;text-transform:uppercase}
+.price.none{font-style:italic;color:var(--mu)}
+.price.big{font-size:13px;margin-top:2px}.price.big b{font-size:22px}
 .add-photo{margin-top:10px}
 .del-own{display:block;margin-top:2px;font-size:10px;color:var(--cu);cursor:pointer;background:none;border:0;padding:0}
   `;
@@ -312,7 +341,7 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
       const score=imgHits && r._sim!=null? `<div class="xref">Similarity ${Math.round(r._sim*100)}%${r._simApprox?' · <span class="badge approx">Approximate – typical '+esc(r._simTyp||'part')+'</span>':''}</div>`:'';
       const imgs=r._dispImgs||r._imgs;
       return `<tr data-i="${i}">
-        <td><div class="td-item">${thumbHtml(imgs)}<div><b>${esc(r._sku)}</b>${xrefHtml(r,false)}${score}</div></div></td>
+        <td><div class="td-item">${thumbHtml(imgs)}<div><b>${esc(r._sku)}</b>${priceHtml(r)}${xrefHtml(r,false)}${score}</div></div></td>
         <td>${esc(r._desc)}</td>
         <td>${esc(r._brand)}</td>
         <td>${appText(r).map(x=>'<span class="tag">'+esc(x)+'</span>').join(' ')}</td>
@@ -414,6 +443,7 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
     const add=ownerOn?`<div class="add-photo"><button type="button" id="add-photo-btn">Add photo</button></div>`:'';
     $('det').innerHTML=`<button class="ghost" onclick="document.getElementById('det').classList.remove('open')" style="float:right">\u2715</button>
       <h2>${esc(r._sku)}</h2>
+      ${priceDetail(r)}
       <div class="k">Description</div>${esc(r._desc)}
       <div class="k">Brand</div>${esc(r._brand)}
       <div class="k">Category</div>${esc(r._cat)}
@@ -423,7 +453,7 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
       <div class="k">Application (from description)</div>${appText(r).join('<br>')||'\u2014'}
       <div class="k">Year in description</div>${(r._years||[]).map(([a,b])=>yrLab(a,b)).join(', ')||'\u2014'}
       <div class="k">Engine in description</div>${r._eng.join(', ')||'\u2014'}
-      <p class="k">Confirm fitment before sale. These tags are parsed from the item description and are not verified fitment. Stock quantities are not shown.</p>`;
+      <p class="k">Confirm fitment before sale. These tags are parsed from the item description and are not verified fitment. Stock quantities are not shown. Prices are in AED incl. 5% VAT as per the price list; confirm before sale.</p>`;
     $('det').classList.add('open');
     $('det').querySelectorAll('img[data-full]').forEach(im=>im.onclick=ev=>{ ev.stopPropagation(); openLightbox(im.dataset.full); });
     const addBtn=$('add-photo-btn');
@@ -436,8 +466,8 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
   const _csv=$('csv').onclick;
   $('csv').onclick=()=>{
     const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
-    const L=[['Item No.','Description','Brand','Category','UoM','Cross refs','Application (from description)','Year','Engine'].join(',')].concat(
-      res.map(r=>[r._sku,r._desc,r._brand,r._cat,r._uom,(r._xrefs||[]).join(' | '),appText(r).join(' | '),(r._years||[]).map(([a,b])=>yrLab(a,b)).join(' | '),r._eng.join(' | ')].map(q).join(','))
+    const L=[['Item No.','Description','Brand','Category','UoM','Price (AED incl. 5% VAT)','Pack','Cross refs','Application (from description)','Year','Engine'].join(',')].concat(
+      res.map(r=>[r._sku,r._desc,r._brand,r._cat,r._uom,(r._price&&r._price[0]!=null)?r._price[0].toFixed(2):'Price on request',(r._price&&r._price[2])||'',(r._xrefs||[]).join(' | '),appText(r).join(' | '),(r._years||[]).map(([a,b])=>yrLab(a,b)).join(' | '),r._eng.join(' | ')].map(q).join(','))
     );
     const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\ufeff'+L.join('\r\n')],{type:'text/csv'}));
     a.download='easy-finder-product-'+(make||cat||'all').replace(/\W+/g,'_')+'.csv'; a.click();
