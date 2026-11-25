@@ -7,6 +7,13 @@
   const XREFS=RAW.xrefs||{};
   const IMGS=RAW.imgs||{};
   const APPROX=RAW.approx||{};
+  const _approxCopy=(src, typ)=>(src?Object.assign({},src,{typ:typ,k:'approx'}):null);
+  if(!APPROX['upper arm']) APPROX['upper arm']=_approxCopy(APPROX['control arm'],'upper arm')||{f:'images/approx/control-arm-fahrwerk-jpg.webp',k:'approx',typ:'upper arm',src:'Wikimedia Commons'};
+  if(!APPROX['lower arm']) APPROX['lower arm']=_approxCopy(APPROX['control arm'],'lower arm')||{f:'images/approx/track-control-arm-for-a-kia-ceed-01-jpg.webp',k:'approx',typ:'lower arm',src:'Wikimedia Commons'};
+  /* Prefer the other existing typical arm photo for upper arms when both files exist. */
+  if(APPROX['upper arm']) APPROX['upper arm']=Object.assign({}, APPROX['upper arm'], {f:'images/approx/control-arm-fahrwerk-jpg.webp', typ:'upper arm', k:'approx', src:APPROX['upper arm'].src||'Wikimedia Commons'});
+  ['upper arm bush','lower arm bush','control arm bush'].forEach(k=>{ if(!APPROX[k]) APPROX[k]=_approxCopy(APPROX['bushing'],k); });
+  ['upper arm ball joint','lower arm ball joint','control arm ball joint'].forEach(k=>{ if(!APPROX[k]) APPROX[k]=_approxCopy(APPROX['ball joint'],k); });
   const SUB_RULES=[
     ["cabin filter", /\b(CABIN|POLLEN|HABITACLE|INTERIOR FILTER|FILTER,? *CABIN)\b/i],
     ["air filter (panel)", /\bAIR FILTER\b|\bAIR CLEANER ELEMENT\b|\bPANEL AIR\b/i],
@@ -25,7 +32,15 @@
     ["shock absorber", /\bSHOCK ABSORBER\b|\bSHOCK ABS\b/i],
     ["strut", /\bSTRUT\b|\bMACPHERSON\b/i],
     ["coil spring", /\bCOIL SPRING\b|\bSPRING COIL\b/i],
-    ["control arm", /\bCONTROL ARM\b|\bWISHBONE\b|\bSUSPENSION ARM\b|\bTRACK CONTROL\b/i],
+    ["upper arm bush", /^(?!.*TIE[-\s]?ROD).*(?:\bBUSH(?:ING)?\b|\bSILENTBLOC|\bSILENT BLOCK|\bMOUNTING\b).{0,48}\bUPPER ARM\b|\bUPPER ARM\b.{0,48}(?:\bBUSH(?:ING)?\b|\bSILENTBLOC|\bSILENT BLOCK)|\bBUSH(?:ING)?\b.{0,32}\bUPPER\b.{0,20}\bARM\b/i],
+    ["lower arm bush", /^(?!.*TIE[-\s]?ROD).*(?:\bBUSH(?:ING)?\b|\bSILENTBLOC|\bSILENT BLOCK|\bMOUNTING\b).{0,48}\bLOWER ARM\b|\bLOWER ARM\b.{0,48}(?:\bBUSH(?:ING)?\b|\bSILENTBLOC|\bSILENT BLOCK)|\bBUSH(?:ING)?\b.{0,32}\bLOWER\b.{0,20}\bARM\b/i],
+    ["control arm bush", /^(?!.*TIE[-\s]?ROD).*(?:\bBUSH(?:ING)?\b|\bSILENTBLOC|\bSILENT BLOCK|\bMOUNTING\b).{0,48}\b(?:CONTROL ARM|WISHBONE|SUSPENSION ARM|TRACK CONTROL ARM)\b|\b(?:CONTROL ARM|WISHBONE|SUSPENSION ARM|TRACK CONTROL ARM)\b.{0,48}(?:\bBUSH(?:ING)?\b|\bSILENTBLOC|\bSILENT BLOCK|\bMOUNTING\b)/i],
+    ["upper arm ball joint", /\bBALL JOINT\b.{0,48}\bUPPER ARM\b|\bUPPER ARM\b.{0,48}\bBALL JOINT\b/i],
+    ["lower arm ball joint", /\bBALL JOINT\b.{0,48}\bLOWER ARM\b|\bLOWER ARM\b.{0,48}\bBALL JOINT\b/i],
+    ["control arm ball joint", /\bBALL JOINT\b.{0,48}\b(?:CONTROL ARM|WISHBONE|SUSPENSION ARM)\b|\b(?:CONTROL ARM|WISHBONE|SUSPENSION ARM)\b.{0,48}\bBALL JOINT\b|\bARM BALL JOINT\b/i],
+    ["upper arm", /^(?!.*TIE[-\s]?ROD)(?!.*\bBEARING,?\s*CONTROL ARM).*(?:\bUPPER ARM\b|\bUPPER (?:CONTROL|SUSPENSION|TRACK CONTROL) ARM\b|\b(?:CONTROL|SUSPENSION|TRACK CONTROL) ARM UPPER\b|\bARM UPPER\b|\bCOMPLETE UPPER WISHBONE\b|\bUPPER WISHBONE\b|\bWISHBONE FRT UPPER\b|\bWISHBONE(?:\s|,).{0,12}(?:UPPER|\bUP\b)|\bWISHBONE RR\(UP\))/i],
+    ["lower arm", /^(?!.*TIE[-\s]?ROD)(?!.*\bBEARING,?\s*CONTROL ARM).*(?:\bLOWER ARM\b|\bLOWER (?:CONTROL|SUSPENSION|TRACK CONTROL) ARM\b|\b(?:CONTROL|SUSPENSION|TRACK CONTROL) ARM LOWER\b|\bARM LOWER\b|\bWISHBONE,?\s*BOTTOM\b|\bWISHBONE LOWER\b|\bWISHBONE.{0,20}\b(?:LOWER|BOTTOM|LWR)\b)/i],
+    ["control arm", /^(?!.*TIE[-\s]?ROD)(?!.*\bBEARING,?\s*CONTROL ARM).*\b(?:CONTROL ARM|WISHBONE|SUSPENSION ARM|TRACK CONTROL ARM|TRACK CONTROL)\b/i],
     ["ball joint", /\bBALL JOINT\b/i],
     ["tie rod", /\bTIE ROD\b|\bTIE-ROD\b|\bDRAG LINK\b/i],
     ["stabilizer / sway bar link", /\bSTABILIZER\b|\bSWAY BAR\b|\bANTI.?ROLL\b|\bDROP LINK\b|\bKOPPEL\b/i],
@@ -163,6 +178,20 @@
     if(r._xrefs.length){
       r.u+=' '+r._xrefs.join(' ').toUpperCase();
       r.k+=' '+r._xrefs.map(N).join(' ');
+    }
+    const typ=subtypeOf(r._desc,r._cat);
+    r._sub=typ;
+    const d=r._desc||'';
+    let axle='';
+    if(/\bFRONT\b|\bFRT\b/.test(d) || /\bFR\b/.test(d)) axle='front';
+    if(/\bREAR\b|\bRR\b/.test(d)) axle=axle==='front'?'both':'rear';
+    r._armAxle=axle;
+    if(typ==='upper arm'||typ==='upper arm bush'||typ==='upper arm ball joint') r._cat='Upper arm';
+    else if(typ==='lower arm'||typ==='lower arm bush'||typ==='lower arm ball joint') r._cat='Lower arm';
+    else if(typ==='control arm'||typ==='control arm bush'||typ==='control arm ball joint') r._cat='Control arm';
+    if(r._cat==='Upper arm'||r._cat==='Lower arm'||r._cat==='Control arm'){
+      /* refresh approx thumb now that the subtype is known */
+      if(!(IMGS[r._sku]&&IMGS[r._sku].length)) r._imgs=shippedImgs(r._sku,r._desc,r._cat);
     }
   });
   const bySku={};
@@ -1099,7 +1128,9 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
         {id:'strut-mount', n:2, title:'Strut mount', typ:['strut'], cat:'Steering & Suspension', kw:/MOUNTING KIT|STRUT MOUNT|MOUNT KIT/i, x:250, y:28},
         {id:'spring', n:3, title:'Coil spring', typ:['coil spring'], cat:'Steering & Suspension', x:292, y:110},
         {id:'link', n:4, title:'Stabilizer link', typ:['stabilizer / sway bar link'], cat:'Steering & Suspension', x:160, y:160},
-        {id:'bush', n:5, title:'Bushing', typ:['bushing'], cat:'Steering & Suspension', x:360, y:168}
+        {id:'bush', n:5, title:'Bushing', typ:['bushing'], cat:'Steering & Suspension', x:360, y:168},
+        {id:'upper-arm', n:6, title:'Upper arm', typ:['upper arm','upper arm bush','upper arm ball joint','control arm','control arm bush','control arm ball joint'], cat:'Upper arm', axle:'front', x:125, y:105},
+        {id:'lower-arm', n:7, title:'Lower arm', typ:['lower arm','lower arm bush','lower arm ball joint','control arm','control arm bush','control arm ball joint'], cat:'Lower arm', axle:'front', x:250, y:150}
       ],
       svg:`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
         <path d="M250 20 v30"/>
@@ -1110,6 +1141,8 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
         <path d="M250 120 v30 M210 150 h80"/>
         <circle cx="210" cy="150" r="8"/>
         <circle cx="290" cy="150" r="8"/>
+        <path d="M200 105 L125 92 M200 105 L125 118"/>
+        <circle cx="125" cy="105" r="5"/>
         <path d="M160 160 h50"/>
         <rect x="348" y="160" width="24" height="16" rx="4"/>
         <circle cx="180" cy="188" r="22"/>
@@ -1120,8 +1153,10 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
       spots:[
         {id:'shock-r', n:1, title:'Rear shock absorber', typ:['shock absorber'], cat:'Steering & Suspension', x:250, y:60},
         {id:'spring-r', n:2, title:'Rear spring', typ:['coil spring'], cat:'Steering & Suspension', x:170, y:90},
-        {id:'link-r', n:3, title:'Link', typ:['stabilizer / sway bar link','control arm'], cat:'Steering & Suspension', x:300, y:150},
-        {id:'bush-r', n:4, title:'Bushing', typ:['bushing'], cat:'Steering & Suspension', x:120, y:150}
+        {id:'link-r', n:3, title:'Link', typ:['stabilizer / sway bar link'], cat:'Steering & Suspension', x:300, y:150},
+        {id:'bush-r', n:4, title:'Bushing', typ:['bushing'], cat:'Steering & Suspension', x:120, y:150},
+        {id:'upper-arm-r', n:5, title:'Upper arm', typ:['upper arm','upper arm bush','upper arm ball joint','control arm','control arm bush','control arm ball joint'], cat:'Upper arm', axle:'rear', x:330, y:100},
+        {id:'lower-arm-r', n:6, title:'Lower arm', typ:['lower arm','lower arm bush','lower arm ball joint','control arm','control arm bush','control arm ball joint'], cat:'Lower arm', axle:'rear', x:200, y:150}
       ],
       svg:`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
         <path d="M80 150 h360"/>
@@ -1131,6 +1166,8 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
         <path d="M238 80 h24 M238 92 h24 M238 104 h24"/>
         <path d="M170 50 q10 12 0 24 q-10 12 0 24 q10 12 0 24"/>
         <path d="M300 150 v-40 h-50"/>
+        <path d="M400 168 L330 100 L250 100"/>
+        <path d="M400 168 L200 150"/>
         <rect x="108" y="142" width="24" height="16" rx="4"/>
         <circle cx="400" cy="168" r="22"/>
         <circle cx="400" cy="168" r="10"/>
@@ -1188,8 +1225,11 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
   ];
 
   function efpDiagramForPart(r){
-    const typ=subtypeOf(r._desc,r._cat);
-    for(const d of DIAGS){
+    const typ=r._sub||subtypeOf(r._desc,r._cat);
+    const prefer=r._armAxle==='rear'?'rear-suspension':r._armAxle==='front'?'front-suspension':'';
+    const diags=prefer?[DIAGS.find(d=>d.id===prefer),...DIAGS.filter(d=>d.id!==prefer)]:DIAGS;
+    for(const d of diags){
+      if(!d) continue;
       for(const s of d.spots){
         if(s.typ && s.typ.includes(typ)) return {sys:d.id, hot:s.id, title:s.title};
         if(s.kw && s.kw.test(r._desc||'')) return {sys:d.id, hot:s.id, title:s.title};
@@ -1206,16 +1246,21 @@ imgq-note, .imgq-note{font-size:13px;color:var(--cu);font-weight:700;margin:0 0 
         if(year && !yearHit(r._years,year)) continue;
         if(eng && !r._eng.includes(eng)) continue;
       }
-      const typ=subtypeOf(r._desc,r._cat);
+      const typ=r._sub||subtypeOf(r._desc,r._cat);
       const typOk=spot.typ && spot.typ.includes(typ);
       const kwOk=spot.kw && spot.kw.test(r._desc||'');
       if(spot.typ || spot.kw){ if(!(typOk||kwOk)) continue; }
       else if(r._cat!==spot.cat) continue;
+      if(spot.axle==='front' && r._armAxle==='rear') continue;
+      if(spot.axle==='rear' && r._armAxle==='front') continue;
       out.push(r);
     }
     out.sort((a,b)=>{
       const ap=a._price&&a._price[0]!=null?0:1, bp=b._price&&b._price[0]!=null?0:1;
       if(ap!==bp) return ap-bp;
+      const kind=s=>{ const t=s||''; if(/^(upper arm|lower arm)$/.test(t)) return 0; if(/^control arm$/.test(t)) return 1; if(/ball joint/.test(t)) return 2; if(/bush/.test(t)) return 3; return 1; };
+      const ak=kind(a._sub), bk=kind(b._sub);
+      if(ak!==bk) return ak-bk;
       const ae=(a._imgs&&a._imgs[0]&&a._imgs[0].k!=='approx')?0:1;
       const be=(b._imgs&&b._imgs[0]&&b._imgs[0].k!=='approx')?0:1;
       return ae-be;
